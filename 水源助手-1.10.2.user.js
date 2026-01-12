@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         水源助手
 // @namespace    https://shuiyuan.sjtu.edu.cn/u/bluecat/summary
-// @version      1.10.1
+// @version      1.10.2
 // @description  对上海交通大学水源论坛的各项功能进行优化
 // @author       bluecat, CCCC_David, pangbo
 // @match        https://shuiyuan.sjtu.edu.cn/*
@@ -114,23 +114,55 @@
   const getCustomEmoji = () => JSON.parse(getDataPreloaded().customEmoji);
   const getCurrentUser = () => JSON.parse(getDataPreloaded().currentUser);
   const getCurrentUsername = () => getCurrentUser().username;
-  let retortLib = null;
-  let retortLibLoaded = false;
-  const getRetortLib = () => {
-    if (retortLibLoaded) {
-      return retortLib;
+  // Retort Service (新版 Glimmer 组件架构)
+  let retortService = null;
+  let retortServiceLoaded = false;
+  const getRetortService = () => {
+    if (retortServiceLoaded) {
+      return retortService;
     }
-    retortLibLoaded = true;
+    retortServiceLoaded = true;
     try {
-      retortLib = window.require(
-        "discourse/plugins/retort/discourse/lib/retort"
-      ).default;
+      const owner = window.Discourse?.__container__;
+      if (owner) {
+        retortService = owner.lookup("service:retort");
+      }
+      if (!retortService) {
+        throw new Error("无法获取 Retort Service");
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.warn("[水源助手] Retort 插件模块不可用，相关功能已禁用");
+      console.warn("[水源助手] Retort Service 不可用，相关功能已禁用");
     }
-    return retortLib;
+    return retortService;
   };
+  // 兼容旧代码的别名
+  const getRetortLib = getRetortService;
+
+  // 获取 PostStream 以便访问 post model
+  const getPostStream = () => {
+    try {
+      const owner = window.Discourse?.__container__;
+      const topicController = owner?.lookup("controller:topic");
+      return topicController?.model?.postStream || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // 通过 postId 获取 post model 中的 retorts 数据
+  const getRetortsForPost = (postId) => {
+    try {
+      const postStream = getPostStream();
+      if (!postStream) return null;
+      const post = postStream.findLoadedPost(postId);
+      return post?.retorts || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Retort Toggle Widget 已在新版中移除，保留空实现以兼容
   let retortToggleWidgetClass = null;
   let retortToggleLoaded = false;
   const getRetortToggleWidgetClass = () => {
@@ -138,14 +170,9 @@
       return retortToggleWidgetClass;
     }
     retortToggleLoaded = true;
-    try {
-      retortToggleWidgetClass = window.require(
-        "discourse/plugins/retort/discourse/widgets/retort-toggle"
-      ).default;
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn("[水源助手] Retort Toggle 模块不可用，相关功能已禁用");
-    }
+    // 新版 Discourse 使用 Glimmer 组件，Widget 已移除
+    // eslint-disable-next-line no-console
+    console.info("[水源助手] Retort 已升级为 Glimmer 组件，旧版 Widget 相关功能已跳过");
     return retortToggleWidgetClass;
   };
   let emojiInfo = null;
@@ -5613,15 +5640,10 @@
         const scheduleRetortUpdate = () => {
           let retorts = null;
           try {
-            const retortLibInstance = getRetortLib();
-            if (!retortLibInstance) {
-              // Retort 模块不存在，跳过
-              retorts = null;
-            } else {
-              retorts = retortLibInstance.postFor(currentPostId).retorts;
-              if (!Array.isArray(retorts)) {
-                throw new Error("in-memory retorts not an array");
-              }
+            // 新版：直接从 post model 获取 retorts 数据
+            retorts = getRetortsForPost(currentPostId);
+            if (retorts && !Array.isArray(retorts)) {
+              throw new Error("in-memory retorts not an array");
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -5656,12 +5678,11 @@
               retortButton.closest("article")?.getAttribute("data-post-id"),
               10
             );
-            const retortLibForUpdate = getRetortLib();
-            if (!retortLibForUpdate) return; // Retort 模块不存在，跳过
+            // 新版：直接从 post model 获取 retorts 数据
+            const postRetorts = getRetortsForPost(postId);
+            if (!postRetorts) return; // Retorts 数据不可用，跳过
             const retortUsernames = [
-              ...(retortLibForUpdate
-                .postFor(postId)
-                .retorts.find((item) => item.emoji === retortEmoji)
+              ...(postRetorts.find((item) => item.emoji === retortEmoji)
                 ?.usernames || []),
             ];
             const retortsMap = new Map([[retortEmoji, retortUsernames]]);
@@ -5683,43 +5704,52 @@
           }
         };
 
-        // Hook the `updateRetort` function in retort lib.
+        // Hook the `createRetort` and `withdrawRetort` functions in retort service (新版 API).
         // If the promise is rejected (i.e. retort toggle failed), unset the retortButtonClicked and retortButtonDisabled flags on the retort button.
+        const createRetortFailureHandler = (post, emoji) => (reason) => {
+          try {
+            const postId = post.id;
+            if (!Number.isInteger(postId)) {
+              throw new Error("retort service post.id not an integer");
+            }
+            if (typeof emoji !== "string") {
+              throw new Error("retort service emoji not a string");
+            }
+            const retortButton = findRetortButton(postId, emoji);
+            if (retortButton) {
+              deleteDataAtElement(retortButton, "retortButtonClicked");
+              deleteDataAtElement(retortButton, "retortButtonDisabled");
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error(e);
+          }
+          throw reason;
+        };
         try {
-          const retortLib = getRetortLib();
-          if (!retortLib) return; // Retort 模块不存在，跳过
+          const retortSvc = getRetortService();
+          if (!retortSvc) return; // Retort Service 不存在，跳过
+          // Hook createRetort
           applyHook(
-            retortLib,
-            "updateRetort",
+            retortSvc,
+            "createRetort",
             (origFunc) =>
               function (post, emoji) {
                 // eslint-disable-next-line no-invalid-this
-                return origFunc.call(this, post, emoji).catch((reason) => {
-                  try {
-                    const postId = post.id;
-                    if (!Number.isInteger(postId)) {
-                      throw new Error(
-                        "retort lib updateRetort post.id not an integer"
-                      );
-                    }
-                    if (typeof emoji !== "string") {
-                      throw new Error(
-                        "retort lib updateRetort emoji not a string"
-                      );
-                    }
-                    const retortButton = findRetortButton(postId, emoji);
-                    if (retortButton) {
-                      deleteDataAtElement(retortButton, "retortButtonClicked");
-                      deleteDataAtElement(retortButton, "retortButtonDisabled");
-                    }
-                  } catch (e) {
-                    // eslint-disable-next-line no-console
-                    console.error(e);
-                  }
-                  throw reason;
-                });
+                return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
               },
-            "unset-flags-on-button-upon-retort-toggle-failure"
+            "unset-flags-on-button-upon-create-retort-failure"
+          );
+          // Hook withdrawRetort
+          applyHook(
+            retortSvc,
+            "withdrawRetort",
+            (origFunc) =>
+              function (post, emoji) {
+                // eslint-disable-next-line no-invalid-this
+                return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
+              },
+            "unset-flags-on-button-upon-withdraw-retort-failure"
           );
         } catch (e) {
           // eslint-disable-next-line no-console
@@ -5928,46 +5958,52 @@
           }
         });
 
-        // Hook the `updateRetort` function in retort lib.
+        // Hook the `createRetort` and `withdrawRetort` functions in retort service (新版 API).
         // If the promise is rejected (i.e. retort toggle failed), remove the highlight animation right away.
+        const removeHighlightOnFailure = (post, emoji) => (reason) => {
+          try {
+            const postId = post.id;
+            if (!Number.isInteger(postId)) {
+              throw new Error("retort service post.id not an integer");
+            }
+            if (typeof emoji !== "string") {
+              throw new Error("retort service emoji not a string");
+            }
+            const retortButton = findRetortButton(postId, emoji);
+            if (retortButton) {
+              const animationElement = getAnimationElement(retortButton);
+              animationElement.classList.remove("shuiyuan-helper-clicked-retort");
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error(e);
+          }
+          throw reason;
+        };
         try {
-          const retortLibForHighlight = getRetortLib();
-          if (!retortLibForHighlight) return; // Retort 模块不存在，跳过
+          const retortSvcForHighlight = getRetortService();
+          if (!retortSvcForHighlight) return; // Retort Service 不存在，跳过
+          // Hook createRetort
           applyHook(
-            retortLibForHighlight,
-            "updateRetort",
+            retortSvcForHighlight,
+            "createRetort",
             (origFunc) =>
               function (post, emoji) {
                 // eslint-disable-next-line no-invalid-this
-                return origFunc.call(this, post, emoji).catch((reason) => {
-                  try {
-                    const postId = post.id;
-                    if (!Number.isInteger(postId)) {
-                      throw new Error(
-                        "retort lib updateRetort post.id not an integer"
-                      );
-                    }
-                    if (typeof emoji !== "string") {
-                      throw new Error(
-                        "retort lib updateRetort emoji not a string"
-                      );
-                    }
-                    const retortButton = findRetortButton(postId, emoji);
-                    if (retortButton) {
-                      const animationElement =
-                        getAnimationElement(retortButton);
-                      animationElement.classList.remove(
-                        "shuiyuan-helper-clicked-retort"
-                      );
-                    }
-                  } catch (e) {
-                    // eslint-disable-next-line no-console
-                    console.error(e);
-                  }
-                  throw reason;
-                });
+                return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
               },
-            "remove-highlight-animation-upon-retort-toggle-failure"
+            "remove-highlight-animation-upon-create-retort-failure"
+          );
+          // Hook withdrawRetort
+          applyHook(
+            retortSvcForHighlight,
+            "withdrawRetort",
+            (origFunc) =>
+              function (post, emoji) {
+                // eslint-disable-next-line no-invalid-this
+                return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
+              },
+            "remove-highlight-animation-upon-withdraw-retort-failure"
           );
         } catch (e) {
           // eslint-disable-next-line no-console
