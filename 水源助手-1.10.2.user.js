@@ -5728,29 +5728,30 @@
         };
         try {
           const retortSvc = getRetortService();
-          if (!retortSvc) return; // Retort Service 不存在，跳过
-          // Hook createRetort
-          applyHook(
-            retortSvc,
-            "createRetort",
-            (origFunc) =>
-              function (post, emoji) {
-                // eslint-disable-next-line no-invalid-this
-                return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
-              },
-            "unset-flags-on-button-upon-create-retort-failure"
-          );
-          // Hook withdrawRetort
-          applyHook(
-            retortSvc,
-            "withdrawRetort",
-            (origFunc) =>
-              function (post, emoji) {
-                // eslint-disable-next-line no-invalid-this
-                return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
-              },
-            "unset-flags-on-button-upon-withdraw-retort-failure"
-          );
+          if (retortSvc) {
+            // Hook createRetort
+            applyHook(
+              retortSvc,
+              "createRetort",
+              (origFunc) =>
+                function (post, emoji) {
+                  // eslint-disable-next-line no-invalid-this
+                  return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
+                },
+              "unset-flags-on-button-upon-create-retort-failure"
+            );
+            // Hook withdrawRetort
+            applyHook(
+              retortSvc,
+              "withdrawRetort",
+              (origFunc) =>
+                function (post, emoji) {
+                  // eslint-disable-next-line no-invalid-this
+                  return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
+                },
+              "unset-flags-on-button-upon-withdraw-retort-failure"
+            );
+          }
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error(e);
@@ -5760,66 +5761,68 @@
         // See https://github.com/discourse/discourse/blob/187204705323b650d61ed25862eb1a0c733aa63c/app/assets/javascripts/discourse/app/widgets/glue.js#L50
         // Our div.shuiyuan-helper-retort-users wrapper has a conflict with this rerendering.
         // We hook the `willRerenderWidget` function to unwrap the retort button (recover its original structure) beforehand to avoid the conflict.
+        // NOTE: 新版 Discourse 使用 Glimmer 组件，Widget 已移除，此 hook 被跳过
         try {
           const retortToggleClass = getRetortToggleWidgetClass();
-          if (!retortToggleClass) return; // Retort Toggle 模块不存在，跳过
-          applyHook(
-            retortToggleClass.prototype,
-            "willRerenderWidget",
-            (origFunc) =>
-              function () {
-                // eslint-disable-next-line no-invalid-this
-                const thisArg = this;
-                try {
-                  const postId = thisArg.attrs.post.id;
-                  const { emoji, usernames } = thisArg.attrs;
-                  if (!Number.isInteger(postId)) {
-                    throw new Error(
-                      "retort-toggle updateWidget this.state.post.id not an integer"
-                    );
-                  }
-                  if (typeof emoji !== "string") {
-                    throw new Error(
-                      "retort-toggle updateWidget this.state.emoji not a string"
-                    );
-                  }
-                  if (!Array.isArray(usernames)) {
-                    throw new Error(
-                      "retort-toggle updateWidget this.state.usernames not an array"
-                    );
-                  }
-                  const retortButton = findRetortButton(postId, emoji);
-                  // Check if a retort button with this postId and emoji exists on the page. If not, we do not need to do anything.
-                  // Check if this retort button has been clicked (i.e. has the retortButtonClicked flag set).
-                  // Note that if a MessageBus update already arrived before this, the retort buttons will be regenerated
-                  // and would not have the retortButtonClicked flag set. In that case we do not need to unwrap the button since rerendering is already complete.
-                  if (retortButton) {
-                    // Unset the retortButtonClicked flag since we no longer need it.
-                    deleteDataAtElement(retortButton, "retortButtonClicked");
-                    const retortButtonParent = retortButton.parentElement;
-                    // If the retort button clicked is wrapped in div.shuiyuan-helper-retort-users, unwrap it before `updateWidget` rerendering.
-                    // Set the retortButtonUnwrapped flag so that we can process the button at a later time (when rerendering is done).
-                    if (
-                      retortButtonParent?.matches(
-                        ".shuiyuan-helper-retort-users"
-                      )
-                    ) {
-                      setDataAtElement(
-                        retortButton,
-                        "retortButtonUnwrapped",
-                        true
+          if (retortToggleClass) {
+            applyHook(
+              retortToggleClass.prototype,
+              "willRerenderWidget",
+              (origFunc) =>
+                function () {
+                  // eslint-disable-next-line no-invalid-this
+                  const thisArg = this;
+                  try {
+                    const postId = thisArg.attrs.post.id;
+                    const { emoji, usernames } = thisArg.attrs;
+                    if (!Number.isInteger(postId)) {
+                      throw new Error(
+                        "retort-toggle updateWidget this.state.post.id not an integer"
                       );
-                      retortButtonParent.replaceWith(retortButton);
                     }
+                    if (typeof emoji !== "string") {
+                      throw new Error(
+                        "retort-toggle updateWidget this.state.emoji not a string"
+                      );
+                    }
+                    if (!Array.isArray(usernames)) {
+                      throw new Error(
+                        "retort-toggle updateWidget this.state.usernames not an array"
+                      );
+                    }
+                    const retortButton = findRetortButton(postId, emoji);
+                    // Check if a retort button with this postId and emoji exists on the page. If not, we do not need to do anything.
+                    // Check if this retort button has been clicked (i.e. has the retortButtonClicked flag set).
+                    // Note that if a MessageBus update already arrived before this, the retort buttons will be regenerated
+                    // and would not have the retortButtonClicked flag set. In that case we do not need to unwrap the button since rerendering is already complete.
+                    if (retortButton) {
+                      // Unset the retortButtonClicked flag since we no longer need it.
+                      deleteDataAtElement(retortButton, "retortButtonClicked");
+                      const retortButtonParent = retortButton.parentElement;
+                      // If the retort button clicked is wrapped in div.shuiyuan-helper-retort-users, unwrap it before `updateWidget` rerendering.
+                      // Set the retortButtonUnwrapped flag so that we can process the button at a later time (when rerendering is done).
+                      if (
+                        retortButtonParent?.matches(
+                          ".shuiyuan-helper-retort-users"
+                        )
+                      ) {
+                        setDataAtElement(
+                          retortButton,
+                          "retortButtonUnwrapped",
+                          true
+                        );
+                        retortButtonParent.replaceWith(retortButton);
+                      }
+                    }
+                  } catch (e) {
+                    // eslint-disable-next-line no-console
+                    console.error(e);
                   }
-                } catch (e) {
-                  // eslint-disable-next-line no-console
-                  console.error(e);
-                }
-                origFunc.call(thisArg);
-              },
-            "unwrap-retort-button-before-widget-update"
-          );
+                  origFunc.call(thisArg);
+                },
+              "unwrap-retort-button-before-widget-update"
+            );
+          }
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error(e);
@@ -5827,31 +5830,33 @@
 
         // See https://github.com/discourse/discourse/blob/187204705323b650d61ed25862eb1a0c733aa63c/app/assets/javascripts/discourse/app/widgets/glue.js#L56
         // We hook the `didRenderWidget` function to wrap the retort button after DOM patching is done.
+        // NOTE: 新版 Discourse 使用 Glimmer 组件，Widget 已移除，此 hook 被跳过
         try {
           const retortToggleClass2 = getRetortToggleWidgetClass();
-          if (!retortToggleClass2) return; // Retort Toggle 模块不存在，跳过
-          applyHook(
-            retortToggleClass2.prototype,
-            "didRenderWidget",
-            (origFunc) =>
-              function () {
-                // eslint-disable-next-line no-invalid-this
-                const thisArg = this;
-                try {
-                  const postId = thisArg.attrs.post.id;
-                  const { emoji } = thisArg.attrs;
-                  const retortButton = findRetortButton(postId, emoji);
-                  if (retortButton) {
-                    updateOneRetort(retortButton);
+          if (retortToggleClass2) {
+            applyHook(
+              retortToggleClass2.prototype,
+              "didRenderWidget",
+              (origFunc) =>
+                function () {
+                  // eslint-disable-next-line no-invalid-this
+                  const thisArg = this;
+                  try {
+                    const postId = thisArg.attrs.post.id;
+                    const { emoji } = thisArg.attrs;
+                    const retortButton = findRetortButton(postId, emoji);
+                    if (retortButton) {
+                      updateOneRetort(retortButton);
+                    }
+                  } catch (e) {
+                    // eslint-disable-next-line no-console
+                    console.error(e);
                   }
-                } catch (e) {
-                  // eslint-disable-next-line no-console
-                  console.error(e);
-                }
-                origFunc.call(thisArg);
-              },
-            "wrap-retort-button-after-widget-update"
-          );
+                  origFunc.call(thisArg);
+                },
+              "wrap-retort-button-after-widget-update"
+            );
+          }
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error(e);
@@ -5982,29 +5987,30 @@
         };
         try {
           const retortSvcForHighlight = getRetortService();
-          if (!retortSvcForHighlight) return; // Retort Service 不存在，跳过
-          // Hook createRetort
-          applyHook(
-            retortSvcForHighlight,
-            "createRetort",
-            (origFunc) =>
-              function (post, emoji) {
-                // eslint-disable-next-line no-invalid-this
-                return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
-              },
-            "remove-highlight-animation-upon-create-retort-failure"
-          );
-          // Hook withdrawRetort
-          applyHook(
-            retortSvcForHighlight,
-            "withdrawRetort",
-            (origFunc) =>
-              function (post, emoji) {
-                // eslint-disable-next-line no-invalid-this
-                return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
-              },
-            "remove-highlight-animation-upon-withdraw-retort-failure"
-          );
+          if (retortSvcForHighlight) {
+            // Hook createRetort
+            applyHook(
+              retortSvcForHighlight,
+              "createRetort",
+              (origFunc) =>
+                function (post, emoji) {
+                  // eslint-disable-next-line no-invalid-this
+                  return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
+                },
+              "remove-highlight-animation-upon-create-retort-failure"
+            );
+            // Hook withdrawRetort
+            applyHook(
+              retortSvcForHighlight,
+              "withdrawRetort",
+              (origFunc) =>
+                function (post, emoji) {
+                  // eslint-disable-next-line no-invalid-this
+                  return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
+                },
+              "remove-highlight-animation-upon-withdraw-retort-failure"
+            );
+          }
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error(e);
