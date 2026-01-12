@@ -398,6 +398,33 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     });
   }
 
+  // Firefox 兼容性修复：清理元素的 CSS 属性，避免 html-to-image 报错
+  function sanitizeElementStyles(element) {
+    const allElements = element.querySelectorAll("*");
+    const elementsToProcess = [element, ...allElements];
+
+    elementsToProcess.forEach((el) => {
+      // 移除可能导致问题的 CSS 变量引用
+      const style = el.style;
+      if (style) {
+        // 检查并修复可能为 undefined 的样式属性
+        for (let i = 0; i < style.length; i++) {
+          const prop = style[i];
+          const value = style.getPropertyValue(prop);
+          // 如果值为空或包含未解析的 CSS 变量，设置为默认值
+          if (!value || value === "undefined") {
+            style.removeProperty(prop);
+          }
+        }
+      }
+
+      // 移除可能导致问题的属性
+      if (el.hasAttribute("data-theme-extension")) {
+        el.removeAttribute("data-theme-extension");
+      }
+    });
+  }
+
   function copyCard() {
     // 等待DOM渲染完成后再截图
     requestAnimationFrame(() => {
@@ -413,20 +440,46 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         // 等待所有图片加载完成
         await waitForImages(shareCard);
 
+        // Firefox 兼容性：清理样式
+        sanitizeElementStyles(shareCard);
+
+        // 检测是否为 Firefox
+        const isFirefox =
+          navigator.userAgent.toLowerCase().includes("firefox") ||
+          typeof InstallTrigger !== "undefined";
+
+        // Firefox 专用配置
+        const options = {
+          style: {
+            position: "static",
+            transform: "translate(-10px,-10px)",
+          },
+          cacheBust: true,
+          skipAutoScale: true,
+          useCORS: true,
+          quality: 1.0,
+          // Firefox 兼容性：过滤可能导致问题的元素
+          filter: (node) => {
+            // 跳过 script 和 style 标签
+            if (node.tagName === "SCRIPT" || node.tagName === "NOSCRIPT") {
+              return false;
+            }
+            // 跳过隐藏元素
+            if (node.style && node.style.display === "none") {
+              return false;
+            }
+            return true;
+          },
+        };
+
+        // Firefox 需要额外配置
+        if (isFirefox) {
+          options.skipFonts = true; // Firefox 字体处理可能有问题
+          options.preferredFontFormat = "woff2";
+        }
+
         htmlToImage
-          .toPng(shareCard, {
-            style: {
-              position: "static",
-              transform: "translate(-10px,-10px)",
-            },
-            // 添加更多选项以提高兼容性
-            cacheBust: true,
-            skipAutoScale: true,
-            // 允许跨域图片
-            useCORS: true,
-            // 设置图片质量
-            quality: 1.0,
-          })
+          .toPng(shareCard, options)
           .then(function (dataUrl) {
             console.log(
               "Screenshot successful, dataUrl length:",
@@ -446,7 +499,57 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
           .catch(function (error) {
             console.error("htmlToImage.toPng failed:", error);
             console.error("Error stack:", error.stack);
-            showFeedback("复制失败！请查看控制台", "red");
+
+            // Firefox 降级方案：尝试使用更保守的设置
+            if (isFirefox) {
+              console.log("Trying Firefox fallback method...");
+              htmlToImage
+                .toPng(shareCard, {
+                  style: {
+                    position: "static",
+                    transform: "translate(-10px,-10px)",
+                  },
+                  cacheBust: true,
+                  skipFonts: true,
+                  includeQueryParams: true,
+                  filter: (node) => {
+                    // 更严格的过滤
+                    if (
+                      node.tagName === "SCRIPT" ||
+                      node.tagName === "NOSCRIPT" ||
+                      node.tagName === "IFRAME" ||
+                      node.tagName === "VIDEO" ||
+                      node.tagName === "CANVAS"
+                    ) {
+                      return false;
+                    }
+                    return true;
+                  },
+                })
+                .then(function (dataUrl) {
+                  console.log(
+                    "Firefox fallback successful, dataUrl length:",
+                    dataUrl.length
+                  );
+                  const saveImageLink =
+                    document.getElementById("save_image_link");
+                  if (saveImageLink) {
+                    saveImageLink.href = dataUrl;
+                  }
+                  if (!isMobile) {
+                    var imgBlob = dataURItoBlob(dataUrl);
+                    var item = new ClipboardItem({ "image/png": imgBlob });
+                    navigator.clipboard.write([item]);
+                    showFeedback("卡片已复制！", "rgb(60, 179, 113)");
+                  }
+                })
+                .catch(function (fallbackError) {
+                  console.error("Firefox fallback also failed:", fallbackError);
+                  showFeedback("复制失败！Firefox 兼容性问题", "red");
+                });
+            } else {
+              showFeedback("复制失败！请查看控制台", "red");
+            }
           });
       }, 100); // 等待100ms让DOM完全渲染
     });
