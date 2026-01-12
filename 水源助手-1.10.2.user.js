@@ -172,7 +172,9 @@
     retortToggleLoaded = true;
     // 新版 Discourse 使用 Glimmer 组件，Widget 已移除
     // eslint-disable-next-line no-console
-    console.info("[水源助手] Retort 已升级为 Glimmer 组件，旧版 Widget 相关功能已跳过");
+    console.info(
+      "[水源助手] Retort 已升级为 Glimmer 组件，旧版 Widget 相关功能已跳过"
+    );
     return retortToggleWidgetClass;
   };
   let emojiInfo = null;
@@ -5476,16 +5478,42 @@
           const retortsMap = new Map(
             retorts.map((item) => [item.emoji, item.usernames])
           );
+          // 新增：emoji 去重，防止新版 Discourse 更新时出现重复按钮
+          const processedEmojis = new Set();
           for (const el of [...retortContainer.children]) {
+            let retortButton = null;
+            let shouldRemoveOldWrapper = false;
+
             if (isRetortButton(el)) {
-              retortContainer.appendChild(generateRetortItem(el, retortsMap));
+              retortButton = el;
             } else if (el.matches(".shuiyuan-helper-retort-users")) {
-              retortContainer.appendChild(
-                generateRetortItem(el.firstElementChild, retortsMap)
-              );
-              el.remove();
+              retortButton = el.firstElementChild;
+              shouldRemoveOldWrapper = true;
             } else {
               // Unexpected element.
+              el.remove();
+              continue;
+            }
+
+            // 获取 emoji 名称并检查是否已处理过
+            const emoji = retortButton?.firstElementChild?.alt?.slice(1, -1);
+            if (!emoji) {
+              el.remove();
+              continue;
+            }
+
+            if (processedEmojis.has(emoji)) {
+              // 重复的 emoji，移除
+              el.remove();
+              continue;
+            }
+            processedEmojis.add(emoji);
+
+            // 正常处理
+            retortContainer.appendChild(
+              generateRetortItem(retortButton, retortsMap)
+            );
+            if (shouldRemoveOldWrapper) {
               el.remove();
             }
           }
@@ -5736,7 +5764,9 @@
               (origFunc) =>
                 function (post, emoji) {
                   // eslint-disable-next-line no-invalid-this
-                  return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
+                  return origFunc
+                    .call(this, post, emoji)
+                    .catch(createRetortFailureHandler(post, emoji));
                 },
               "unset-flags-on-button-upon-create-retort-failure"
             );
@@ -5747,7 +5777,9 @@
               (origFunc) =>
                 function (post, emoji) {
                   // eslint-disable-next-line no-invalid-this
-                  return origFunc.call(this, post, emoji).catch(createRetortFailureHandler(post, emoji));
+                  return origFunc
+                    .call(this, post, emoji)
+                    .catch(createRetortFailureHandler(post, emoji));
                 },
               "unset-flags-on-button-upon-withdraw-retort-failure"
             );
@@ -5977,7 +6009,9 @@
             const retortButton = findRetortButton(postId, emoji);
             if (retortButton) {
               const animationElement = getAnimationElement(retortButton);
-              animationElement.classList.remove("shuiyuan-helper-clicked-retort");
+              animationElement.classList.remove(
+                "shuiyuan-helper-clicked-retort"
+              );
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -5995,7 +6029,9 @@
               (origFunc) =>
                 function (post, emoji) {
                   // eslint-disable-next-line no-invalid-this
-                  return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
+                  return origFunc
+                    .call(this, post, emoji)
+                    .catch(removeHighlightOnFailure(post, emoji));
                 },
               "remove-highlight-animation-upon-create-retort-failure"
             );
@@ -6006,7 +6042,9 @@
               (origFunc) =>
                 function (post, emoji) {
                   // eslint-disable-next-line no-invalid-this
-                  return origFunc.call(this, post, emoji).catch(removeHighlightOnFailure(post, emoji));
+                  return origFunc
+                    .call(this, post, emoji)
+                    .catch(removeHighlightOnFailure(post, emoji));
                 },
               "remove-highlight-animation-upon-withdraw-retort-failure"
             );
