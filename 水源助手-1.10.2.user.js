@@ -3231,8 +3231,6 @@
       const currentDate = new Date();
       for (const member of members) {
         if (!member.id || !member.last_seen_at) {
-          // eslint-disable-next-line no-console
-          console.error("Member missing id or last_seen_at field:", member);
           continue;
         }
         if (currentDate - new Date(member.last_seen_at) <= FIVE_MINUTES_MS) {
@@ -4973,9 +4971,7 @@
         qqEmojiEntrypoint.classList.add("qq-emoji-entrypoint");
         qqEmojiEntrypoint.alt = "QQ 表情面板";
         qqEmojiEntrypoint.title = "QQ 表情面板";
-        qqEmojiEntrypoint.src = QQ_EMOJIS_LIST.find(
-          (qqEmoji) => qqEmoji.name === "斜眼笑"
-        ).url;
+        qqEmojiEntrypoint.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%23FFCC4D'/><circle cx='8.5' cy='10' r='1.5' fill='%23664500'/><circle cx='15.5' cy='10' r='1.5' fill='%23664500'/><path d='M7 14c1 2 3 3 5 3s4-1 5-3' stroke='%23664500' stroke-width='2' fill='none' stroke-linecap='round'/></svg>";
 
         const qqEmojiDiv = document.createElement("div");
         qqEmojiDiv.classList.add("qq-emoji-picker");
