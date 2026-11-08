@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         水源助手
 // @namespace    https://shuiyuan.sjtu.edu.cn/u/bluecat/summary
-// @version      1.10.2
+// @version      1.10.2.1
 // @description  对上海交通大学水源论坛的各项功能进行优化
 // @author       bluecat, CCCC_David, pangbo
 // @match        https://shuiyuan.sjtu.edu.cn/*
 // @grant        none
 // @license      GPL-3.0-only
-// @downloadURL https://update.greasyfork.org/scripts/429382/%E6%B0%B4%E6%BA%90%E5%8A%A9%E6%89%8B.user.js
-// @updateURL https://update.greasyfork.org/scripts/429382/%E6%B0%B4%E6%BA%90%E5%8A%A9%E6%89%8B.meta.js
+// @downloadURL https://raw.githubusercontent.com/InfAnalysis/shuiyuanconfig/main/%E6%B0%B4%E6%BA%90%E5%8A%A9%E6%89%8B.user.js
+// @updateURL https://raw.githubusercontent.com/InfAnalysis/shuiyuanconfig/main/%E6%B0%B4%E6%BA%90%E5%8A%A9%E6%89%8B.user.js
 // ==/UserScript==
 
 (async () => {
