@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         水源终结者
 // @namespace    http://tampermonkey.net/
-// @version      0.8
+// @version      0.8.1
 // @description  生成卡片，加强隐私保护
 // @author       You
 // @match        https://shuiyuan.sjtu.edu.cn/*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
 // @grant        none
+// @downloadURL https://raw.githubusercontent.com/InfAnalysis/shuiyuanconfig/main/%E6%B0%B4%E6%BA%90%E7%BB%88%E7%BB%93%E8%80%85.user.js
+// @updateURL https://raw.githubusercontent.com/InfAnalysis/shuiyuanconfig/main/%E6%B0%B4%E6%BA%90%E7%BB%88%E7%BB%93%E8%80%85.user.js
 // ==/UserScript==
 
 //邮箱信息去除
@@ -54,6 +56,13 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   const isNoTouchDevice = () =>
     document.documentElement.classList.contains("discourse-no-touch");
   let currentThemeInfo = null;
+  let closeCurrentDialog = null;
+  // 打开卡片时重新判断，兼容页面稍后添加手机标记、手机浏览器使用桌面标识。
+  const isMobileCardView = () =>
+    isMobile ||
+    document.documentElement.classList.contains("mobile-device") ||
+    document.documentElement.classList.contains("mobile-view") ||
+    window.matchMedia("(max-width: 767px) and (pointer: coarse)").matches;
   const getCurrentThemeInfo = () => {
     if (currentThemeInfo) {
       return currentThemeInfo;
@@ -113,8 +122,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     contentText,
     time
   ) {
-    const IS_MOBILE_DEVICE =
-      document.documentElement.classList.contains("mobile-device");
+    const IS_MOBILE_DEVICE = isMobileCardView();
 
     // 创建外部 div
     const dialog = document.createElement("div");
@@ -625,11 +633,21 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         Array.from(element.children).forEach((element) => {
           element.style.borderLeft = "0px solid rgb(84, 84, 84)";
         });
-        if (
-          element.firstElementChild &&
-          element.firstElementChild.children.length > 1
-        ) {
-          element.firstElementChild.children[1].style.borderRadius = "50%";
+        //                 if (element.firstElementChild && element.firstElementChild.children.length > 1) {
+        //                     element.firstElementChild.children[1].style.borderRadius = '50%';
+        //                 }
+        if (element.firstElementChild) {
+          // 寻找真正的头像图片（正方形），只给图片加圆角
+          const avatarImg =
+            element.firstElementChild.querySelector("img.avatar");
+          if (avatarImg) {
+            avatarImg.style.borderRadius = "50%";
+          }
+          // 清理掉可能被错误加上圆角的文字链接
+          const wrongLink = element.firstElementChild.querySelector("a");
+          if (wrongLink) {
+            wrongLink.style.borderRadius = ""; // 恢复默认
+          }
         }
       } else if (
         element.tagName.toLowerCase() === "blockquote" &&
@@ -661,6 +679,16 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         element.style.border = "4px solid darkgray"; // 将边框颜色设置为深灰色，并设置边框宽度
       });
     }
+
+    // 移除 Discourse 图片灯箱中的元信息层
+    function removeImageMeta(root) {
+      root.querySelectorAll(".lightbox-wrapper .meta").forEach((meta) => {
+        meta.remove();
+      });
+    }
+
+    removeImageMeta(element);
+
     Array.from(element.children).forEach((child) =>
       processBackgroundColor(child)
     );
@@ -875,8 +903,15 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         postLink?.getAttribute("href") ||
         postLink?.href ||
         window.location.pathname;
-      const url = "https://shuiyuan.sjtu.edu.cn" + postHref.split("?")[0];
-      const content = element.querySelector(".cooked").cloneNode(true);
+      const url = new URL(postHref, location.origin).href.split("?")[0];
+
+      // 内容
+      const content = element.querySelector(".cooked")?.cloneNode(true);
+      if (!content) {
+        showFeedback("找不到帖子内容", "red");
+        return;
+      }
+
       // 修复：兼容新版 Discourse avatar 结构（2025.12.0+）
       // 新版结构：.post-avatar > a.main-avatar > img.avatar
       const avatarImg =
@@ -910,11 +945,12 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         element.querySelector('[class*="relative-date"]') ||
         element.querySelector("time");
       const time =
-        relativeDateEl?.title || relativeDateEl?.getAttribute("datetime") || "";
-      const existingDialog = document.getElementById("dialog");
-      if (existingDialog) {
-        document.body.removeChild(existingDialog);
-      }
+        relativeDateEl?.title ||
+        relativeDateEl?.getAttribute("datetime") ||
+        postLink?.title ||
+        "";
+
+      closeCurrentDialog?.();
 
       const dialog = createDialog(
         titleText,
@@ -927,95 +963,77 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
       dialog.dataset.url = url;
       processContent(content);
 
-      // 添加对话框关闭按钮（移动端需要）
-      if (IS_MOBILE_DEVICE) {
-        const closeBtn = document.createElement("div");
-        // closeBtn.innerHTML = '×';
-        Object.assign(closeBtn.style, {
+      // 与用户卡片一致：手机压暗页面，电脑不创建全屏遮罩。
+      const mobileCard = isMobileCardView();
+      const backdrop = mobileCard ? document.createElement("div") : null;
+      if (backdrop) {
+        backdrop.id = "shuiyuan-killer-backdrop";
+        Object.assign(backdrop.style, {
           position: "fixed",
-          // top: '10px',
-          // right: '15px',
-          // fontSize: '24px',
-          // cursor: 'pointer',
-          backgroundColor: "var(--primary)",
-          // pointerEvents: 'auto' // 确保可点击
-          width: "100%",
-          height: "100%",
-          zIndex: "1100",
-          top: "0px",
-          opacity: ".8",
+          inset: "0",
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          zIndex: "1100", // 卡片原有 zIndex 为 1200
+          pointerEvents: "auto",
         });
-        closeBtn.onclick = () => {
-          dialog.remove();
-          closeBtn.remove();
-        };
-        document.body.appendChild(closeBtn);
       }
 
-      document.body.appendChild(dialog);
+      const controller = new AbortController();
 
-      // 在这里添加页面可见性事件监听代码
-      if (IS_MOBILE_DEVICE) {
-        // 添加页面可见性事件监听，处理用户从保存图片页面返回的情况
-        const handleVisibilityChange = () => {
-          if (document.visibilityState === "visible") {
-            // 当页面重新变为可见状态时，检查并移除对话框
-            const existingDialog = document.getElementById("dialog");
-            if (existingDialog) {
-              document.body.removeChild(existingDialog);
-            }
-            // 移除监听器，避免多次执行
-            document.removeEventListener(
-              "visibilitychange",
-              handleVisibilityChange
-            );
-          }
-        };
+      function closeDialog() {
+        controller.abort();
+        dialog.remove();
+        backdrop?.remove();
 
-        document.addEventListener("visibilitychange", handleVisibilityChange);
-
-        // 5秒后自动移除监听器，避免长时间残留
-        setTimeout(() => {
-          document.removeEventListener(
-            "visibilitychange",
-            handleVisibilityChange
-          );
-        }, 5000);
-      }
-
-      // 设置点击外部关闭逻辑
-      function handleOutsideClick(e) {
-        if (dialog && !dialog.contains(e.target)) {
-          if (document.body.contains(dialog)) {
-            document.body.removeChild(dialog);
-          }
-          document.removeEventListener("click", handleOutsideClick);
+        if (closeCurrentDialog === closeDialog) {
+          closeCurrentDialog = null;
         }
       }
 
-      // 阻止对话框内部点击事件冒泡
-      dialog.addEventListener("click", function (e) {
-        e.stopPropagation();
-      });
+      closeCurrentDialog = closeDialog;
 
-      // 处理按钮点击事件，现在移动端和桌面端使用相同逻辑
-      const copyLinkBtn = dialog.querySelector("#copy_link_button");
+      backdrop?.addEventListener("click", closeDialog);
+      dialog.addEventListener("click", (e) => e.stopPropagation());
+      if (backdrop) document.body.appendChild(backdrop);
+      document.body.appendChild(dialog);
 
-      if (copyLinkBtn) {
-        copyLinkBtn.addEventListener("click", function (e) {
+      // 电脑没有遮罩，直接监听卡片外的操作；关闭时一并移除监听。
+      document.addEventListener(
+        "pointerdown",
+        (e) => {
+          if (!e.composedPath().includes(dialog)) closeDialog();
+        },
+        { capture: true, signal: controller.signal }
+      );
+      document.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Escape") closeDialog();
+        },
+        { signal: controller.signal }
+      );
+
+      // 手机端从保存图片页面返回时，一并关闭卡片和遮罩。
+      if (mobileCard) {
+        document.addEventListener(
+          "visibilitychange",
+          () => {
+            if (document.visibilityState === "visible") {
+              closeDialog();
+            }
+          },
+          { signal: controller.signal }
+        );
+      }
+
+      dialog
+        .querySelector("#copy_link_button")
+        ?.addEventListener("click", (e) => {
           e.stopPropagation();
           copyLink(url);
         });
-      }
+
       copyCard(dialog);
-
-      setTimeout(() => {
-        document.addEventListener("click", handleOutsideClick);
-      }, 100);
-
       dialog.focus();
-
-      // 阻止当前点击事件冒泡到document
       event.stopPropagation();
     });
     actions.classList.add("share-button-added");
@@ -1154,7 +1172,11 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 })();
 
 (function () {
-  window.Discourse.__container__.lookup(
-    "service:site-settings"
-  ).allow_username_in_share_links = false;
+  try {
+    window.Discourse.__container__.lookup(
+      "service:site-settings"
+    ).allow_username_in_share_links = false;
+  } catch (e) {
+    // window.Discourse global removed in Discourse v2026.x; setting no longer applicable here.
+  }
 })();
