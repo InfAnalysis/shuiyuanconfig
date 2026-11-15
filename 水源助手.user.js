@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         水源助手
 // @namespace    https://shuiyuan.sjtu.edu.cn/u/bluecat/summary
-// @version      1.10.2.1
+// @version      1.10.2.2
 // @description  对上海交通大学水源论坛的各项功能进行优化
 // @author       bluecat, CCCC_David, pangbo
 // @match        https://shuiyuan.sjtu.edu.cn/*
@@ -104,8 +104,11 @@
     if (dataPreloaded) {
       return dataPreloaded;
     }
+    const element = document.getElementById("data-preloaded");
+    // Discourse 2026.7 moved this JSON from a data-preloaded attribute into
+    // the body of a <script type="application/json"> element.
     dataPreloaded = JSON.parse(
-      document.getElementById("data-preloaded").getAttribute("data-preloaded")
+      element.getAttribute("data-preloaded") ?? element.textContent
     );
     return dataPreloaded;
   };
@@ -4971,7 +4974,8 @@
         qqEmojiEntrypoint.classList.add("qq-emoji-entrypoint");
         qqEmojiEntrypoint.alt = "QQ 表情面板";
         qqEmojiEntrypoint.title = "QQ 表情面板";
-        qqEmojiEntrypoint.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%23FFCC4D'/><circle cx='8.5' cy='10' r='1.5' fill='%23664500'/><circle cx='15.5' cy='10' r='1.5' fill='%23664500'/><path d='M7 14c1 2 3 3 5 3s4-1 5-3' stroke='%23664500' stroke-width='2' fill='none' stroke-linecap='round'/></svg>";
+        qqEmojiEntrypoint.src =
+          "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%23FFCC4D'/><circle cx='8.5' cy='10' r='1.5' fill='%23664500'/><circle cx='15.5' cy='10' r='1.5' fill='%23664500'/><path d='M7 14c1 2 3 3 5 3s4-1 5-3' stroke='%23664500' stroke-width='2' fill='none' stroke-linecap='round'/></svg>";
 
         const qqEmojiDiv = document.createElement("div");
         qqEmojiDiv.classList.add("qq-emoji-picker");
